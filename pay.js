@@ -1,14 +1,28 @@
 /*
   Galaxy Strike payment bridge.
-  This file connects the game coin-pack checkout UI to the PayApi-v2 DoRequest flow.
+  External dependencies required in index.html, in this order:
+  1) https://www.roomilo.com/js/core/crypto-js.min.js
+  2) https://www.roomilo.com/js/core/PayApi-v2.js
+  3) ./pay.js
+
+  The game calls window.GamePayment.startGamePayment(...). This wrapper builds
+  the DoRequest(options) payload used by the provider and stores a pending order
+  so coins can be granted when the player returns through successUrl.
 */
 (function () {
   'use strict';
 
   const PENDING_KEY = 'GALAXY_STRIKE_PENDING_COIN_ORDER';
+
   const PAY_TYPES = {
+    card: 8004,
+    creditCard: 8004,
     'Credit Card': 8004,
+    apple: 8003,
+    applePay: 8003,
     'Apple Pay': 8003,
+    google: 8012,
+    googlePay: 8012,
     'Google Pay': 8012
   };
 
@@ -17,12 +31,14 @@
     return Number(String(value || '').replace(/[^0-9.]/g, '')) || 0;
   }
 
-  function splitName(name) {
-    const parts = String(name || 'Ace Pilot').trim().split(/\s+/).filter(Boolean);
-    return {
-      firstName: parts[0] || 'Ace',
-      lastName: parts.slice(1).join(' ') || 'Pilot'
-    };
+  function cleanText(value, fallback) {
+    const text = String(value || '').trim();
+    return text || fallback;
+  }
+
+  function createOrderId(prefix = 'GS') {
+    const random = Math.floor(Math.random() * 900000 + 100000);
+    return `${prefix}${Date.now()}${random}`;
   }
 
   function buildReturnUrl(status, orderId) {
@@ -45,58 +61,118 @@
     localStorage.removeItem(PENDING_KEY);
   }
 
-  window.GalaxyPay = {
-    async checkout({ method = 'Credit Card', packName = 'Coin Pack', amount = 0.99, currency = 'USD', coins = 0, email = '', name = 'Ace Pilot', firstName = '', lastName = '', country = 'US', phone = '', successUrl = '', backUrl = '' } = {}) {
-      const orderId = `GS${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
-      const amountValue = normalizeAmount(amount);
-      const nameParts = splitName(name);
-      const checkoutFirstName = String(firstName || nameParts.firstName || 'Ace').trim();
-      const checkoutLastName = String(lastName || nameParts.lastName || 'Pilot').trim();
-      const order = {
-        orderId,
-        packName,
-        amount: amountValue,
-        currency,
-        coins,
-        method,
-        email,
-        firstName: checkoutFirstName,
-        lastName: checkoutLastName,
-        country,
-        createdAt: new Date().toISOString()
-      };
-      savePending(order);
+  async function startGamePayment({
+    amount = 0,
+    coins = 0,
+    productName = '',
+    packName = '',
+    payMethod = 'card',
+    method = '',
+    currency = 'USD',
+    email = '',
+    firstName = '',
+    lastName = '',
+    country = 'US',
+    phone = '',
+    successUrl = '',
+    backUrl = ''
+  } = {}) {
+    const checkoutEmail = cleanText(email, '').toLowerCase();
+    const checkoutFirstName = cleanText(firstName, 'Ace');
+    const checkoutLastName = cleanText(lastName, 'Pilot');
+    const checkoutCountry = cleanText(country, 'US');
+    const checkoutPhone = cleanText(phone, '0000000000');
+    const amountValue = normalizeAmount(amount);
+    const itemName = cleanText(productName || packName, 'Galaxy Strike Coin Pack');
+    const methodKey = method || payMethod || 'card';
+    const payTypes = PAY_TYPES[methodKey] || PAY_TYPES.card;
+    const orderId = createOrderId('GS');
 
-      const options = {
-        orderId,
-        amount: amountValue,
-        currency,
-        payTypes: PAY_TYPES[method] || PAY_TYPES['Credit Card'],
-        name: packName,
-        email: email || 'pilot@example.com',
-        firstName: checkoutFirstName,
-        lastName: checkoutLastName,
-        country,
-        phone: phone || '',
-        successUrl: successUrl || buildReturnUrl('success', orderId),
-        backUrl: backUrl || buildReturnUrl('failed', orderId)
-      };
-
-      if (typeof window.DoRequest === 'function') {
-        window.DoRequest(options);
-        return { ok: true, order };
-      }
-
-      console.warn('[GalaxyPay] DoRequest is unavailable. Check PayApi-v2.js and crypto-js.min.js script loading.');
-      return { ok: false, message: 'Payment service is unavailable.', order };
-    },
-
-    consumeCompletedOrder(orderId) {
-      const order = readPending();
-      if (!order) return null;
-      if (orderId && order.orderId && String(order.orderId) !== String(orderId)) return null;
-      clearPending();
-      return order;
+    if (!checkoutEmail || !checkoutFirstName || !checkoutLastName || !checkoutCountry) {
+      return { ok: false, message: 'Please complete your billing information first.' };
     }
+
+    if (!amountValue || amountValue <= 0) {
+      return { ok: false, message: 'Invalid checkout amount.' };
+    }
+
+    const order = {
+      orderId,
+      packName: itemName,
+      amount: amountValue,
+      currency,
+      coins: Number(coins || 0),
+      method: methodKey,
+      payTypes,
+      email: checkoutEmail,
+      firstName: checkoutFirstName,
+      lastName: checkoutLastName,
+      country: checkoutCountry,
+      phone: checkoutPhone,
+      createdAt: new Date().toISOString()
+    };
+    savePending(order);
+
+    const options = {
+      orderId,
+      amount: amountValue,
+      currency,
+      payTypes,
+      name: itemName,
+      email: checkoutEmail,
+      firstName: checkoutFirstName,
+      lastName: checkoutLastName,
+      phone: checkoutPhone,
+      successUrl: successUrl || buildReturnUrl('success', orderId),
+      backUrl: backUrl || buildReturnUrl('failed', orderId)
+    };
+
+    // Keep country in the provider payload for light-game checkout profiling.
+    // The provider may ignore unsupported fields, but the local order keeps it.
+    options.country = checkoutCountry;
+
+    if (typeof window.DoRequest !== 'function') {
+      console.error('[GamePayment] DoRequest is unavailable. Confirm crypto-js.min.js and PayApi-v2.js are loaded before pay.js.');
+      return { ok: false, message: 'Payment service is not available. Please try again later.', order };
+    }
+
+    window.DoRequest(options);
+    return { ok: true, order };
+  }
+
+  function consumeCompletedOrder(orderId) {
+    const order = readPending();
+    if (!order) return null;
+    if (orderId && order.orderId && String(order.orderId) !== String(orderId)) return null;
+    clearPending();
+    return order;
+  }
+
+  window.GamePayment = {
+    startGamePayment,
+    consumeCompletedOrder,
+    PAY_TYPES,
+    createOrderId
+  };
+
+  // Backward compatibility for earlier Galaxy Strike builds.
+  window.GalaxyPay = {
+    checkout(params = {}) {
+      return startGamePayment({
+        amount: params.amount,
+        coins: params.coins,
+        productName: params.packName || params.productName,
+        payMethod: params.method || params.payMethod,
+        currency: params.currency,
+        email: params.email,
+        firstName: params.firstName,
+        lastName: params.lastName,
+        country: params.country,
+        phone: params.phone,
+        successUrl: params.successUrl,
+        backUrl: params.backUrl
+      });
+    },
+    consumeCompletedOrder
   };
 })();
