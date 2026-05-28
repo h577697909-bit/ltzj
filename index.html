@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Galaxy Strike: Neon Wings V12</title>
+  <title>Galaxy Strike: Neon Wings V13</title>
   <script src="https://www.roomilo.com/js/core/crypto-js.min.js"></script>
   <script src="https://www.roomilo.com/js/core/PayApi-v2.js"></script>
-  <script src="pay.js"></script>
+  <script src="./pay.js"></script>
   <style>
     :root {
       --bg: #070818;
@@ -2039,23 +2039,20 @@
       if (!/^\S+@\S+\.\S+$/.test(email)) return toast('Enter a valid checkout email.');
       u.firstName = firstName; u.lastName = lastName; u.country = country; if (!u.email.includes('@local')) u.email = u.email;
       Store.save();
-      const returnBase = location.protocol === 'file:' ? location.href.split('?')[0] : `${location.origin}${location.pathname}`;
-      const result = await window.GalaxyPay.checkout({
-        method,
-        packName: pendingPack.name,
+      if (!window.GamePayment || typeof window.GamePayment.startGamePayment !== 'function') return toast('Payment service is not available. Please try again later.');
+      const result = await window.GamePayment.startGamePayment({
+        payMethod: method,
+        productName: pendingPack.name,
         amount: pendingPack.amount,
         currency: 'USD',
         coins: pendingPack.coins,
         email,
-        name: u.name,
         firstName,
         lastName,
         country,
-        successUrl: `${returnBase}?payment=success`,
-        backUrl: `${returnBase}?payment=failed`
+        phone: u.phone || '0000000000'
       });
-      if (result && result.ok && result.localApproved) { grantCoinPack(result.order || { coins: pendingPack.coins, packName: pendingPack.name, amount: pendingPack.amount, firstName, lastName, country }); }
-      else if (result && result.ok) { toast('Opening secure checkout...'); }
+      if (result && result.ok) { toast('Opening secure checkout...'); }
       else toast(result && result.message ? result.message : 'Payment service is unavailable.');
     }
 
@@ -2067,8 +2064,8 @@
 
     function processPaymentReturn() {
       const params = new URLSearchParams(location.search);
-      if (params.get('payment') !== 'success' || !window.GalaxyPay) return;
-      const order = window.GalaxyPay.consumeCompletedOrder(params.get('orderId'));
+      if (params.get('payment') !== 'success' || !window.GamePayment) return;
+      const order = window.GamePayment.consumeCompletedOrder(params.get('orderId'));
       if (order) grantCoinPack(order);
       history.replaceState({}, document.title, location.pathname);
     }
