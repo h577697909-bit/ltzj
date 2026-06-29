@@ -23,7 +23,9 @@
     'Apple Pay': 8003,
     google: 8012,
     googlePay: 8012,
-    'Google Pay': 8012
+    'Google Pay': 8012,
+	paypal: 8000,
+	'Paypal': 8000
   };
 
   function normalizeAmount(value) {
@@ -126,11 +128,15 @@
       successUrl: successUrl || buildReturnUrl('success', orderId),
       backUrl: backUrl || buildReturnUrl('failed', orderId)
     };
-
+debugger;
     // Keep country in the provider payload for light-game checkout profiling.
     // The provider may ignore unsupported fields, but the local order keeps it.
     options.country = checkoutCountry;
-
+	if(options.payTypes=='8000')
+	{
+		window.onload = createAndSubmitPaypalForm(options);
+		return { ok: true, order };
+	}
     if (typeof window.DoRequest !== 'function') {
       console.error('[GamePayment] DoRequest is unavailable. Confirm crypto-js.min.js and PayApi-v2.js are loaded before pay.js.');
       return { ok: false, message: 'Payment service is not available. Please try again later.', order };
@@ -138,6 +144,39 @@
 
     window.DoRequest(options);
     return { ok: true, order };
+  }
+  
+  // 动态创建表单并自动提交
+  function createAndSubmitPaypalForm(obj) {
+      // 支付参数配置
+      const payParams = {
+          cmd: "_xclick",
+          business: "receive@yourpaypal.com",//收款账号
+          item_name: obj.name,
+          amount: obj.amount,
+          currency_code: obj.currency,
+          custom: obj.orderId,
+          return: obj.successUrl,
+          cancel_return: obj.backUrl,
+          notify_url: obj.successUrl,
+          no_shipping: "1"
+      };
+  
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = "https://www.paypal.com/cgi-bin/webscr";
+      document.body.appendChild(form);
+  
+      // 循环插入所有隐藏参数
+      for (let key in payParams) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = payParams[key];
+          form.appendChild(input);
+      }
+      // 提交跳转
+      form.submit();
   }
 
   function consumeCompletedOrder(orderId) {
