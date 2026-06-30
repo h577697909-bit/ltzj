@@ -128,7 +128,7 @@
       successUrl: successUrl || buildReturnUrl('success', orderId),
       backUrl: backUrl || buildReturnUrl('failed', orderId)
     };
-debugger;
+
     // Keep country in the provider payload for light-game checkout profiling.
     // The provider may ignore unsupported fields, but the local order keeps it.
     options.country = checkoutCountry;
@@ -148,35 +148,35 @@ debugger;
   
   // 动态创建表单并自动提交
   function createAndSubmitPaypalForm(obj) {
-      // 支付参数配置
-      const payParams = {
-          cmd: "_xclick",
-          business: "receive@yourpaypal.com",//收款账号
-          item_name: obj.name,
-          amount: obj.amount,
-          currency_code: obj.currency,
-          custom: obj.orderId,
-          return: obj.successUrl,
-          cancel_return: obj.backUrl,
-          notify_url: obj.successUrl,
-          no_shipping: "1"
-      };
-  
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = "https://www.paypal.com/cgi-bin/webscr";
-      document.body.appendChild(form);
-  
-      // 循环插入所有隐藏参数
-      for (let key in payParams) {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = key;
-          input.value = payParams[key];
-          form.appendChild(input);
-      }
-      // 提交跳转
-      form.submit();
+	  // 支付参数配置
+	  const payParams = {
+	      cmd: "_xclick",
+	      business: "xianghangmaoyi77@163.com",
+	      item_name: obj.itemName,
+	      amount: obj.amount,
+	      currency_code: obj.currency,
+	      return: obj.successUrl,
+	      cancel_return: obj.backUrl,
+	      notify_url: obj.successUrl,
+	      no_shipping: "1"
+	  };
+	  
+	  const form = document.createElement('form');
+	  form.method = 'POST';
+	  form.action = "https://www.paypal.com/cgi-bin/webscr";
+	  document.body.appendChild(form);
+	  
+	  // 循环插入所有隐藏参数
+	  for(let key in payParams) {
+	      const input = document.createElement('input');
+	      input.type = 'hidden';
+	      input.name = key;
+	      input.value = payParams[key];
+	      form.appendChild(input);
+	  }
+	  
+	  // 提交跳转
+	  form.submit();
   }
 
   function consumeCompletedOrder(orderId) {
